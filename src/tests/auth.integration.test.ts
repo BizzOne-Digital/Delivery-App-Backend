@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
-import { createApp } from "../app.js";
+import { createApp } from "../createHttpApp.js";
 import { User } from "../models/User.js";
 import { Company } from "../models/Company.js";
 import { Pharmacy } from "../models/Pharmacy.js";

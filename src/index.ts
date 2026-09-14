@@ -1,7 +1,7 @@
 import http from "http";
 import mongoose from "mongoose";
 import { env } from "./config/env.js";
-import { createApp } from "./app.js";
+import { createApp } from "./createHttpApp.js";
 import { initSocket } from "./socket/index.js";
 
 async function main() {
