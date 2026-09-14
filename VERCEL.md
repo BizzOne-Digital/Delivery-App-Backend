@@ -21,5 +21,7 @@ Set `MONGODB_URI`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV=producti
 
 ## After deploy
 
-- `https://YOUR-PROJECT.vercel.app/`
-- `https://YOUR-PROJECT.vercel.app/api/v1/health`
+- `https://YOUR-PROJECT.vercel.app/` — static info page
+- `https://YOUR-PROJECT.vercel.app/api/v1/health` — should return JSON (`db: connected` if Mongo works)
+
+If health shows `db: disconnected` or login/API fails with 500/504, open **MongoDB Atlas → Network Access** and allow access from anywhere (`0.0.0.0/0`) or add Vercel’s IPs. Confirm `MONGODB_URI` in Vercel env matches Atlas (user + password URL-encoded).
