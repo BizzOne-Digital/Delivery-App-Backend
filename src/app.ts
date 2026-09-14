@@ -36,6 +36,14 @@ export function createApp() {
   app.use(express.json({ limit: "2mb" }));
   app.use("/uploads", express.static(path.resolve("uploads")));
 
+  app.get("/", (_req, res) => {
+    res.json({
+      success: true,
+      message: "Delivery App API",
+      health: "/api/v1/health",
+    });
+  });
+
   app.use("/api/v1/health", healthRoutes);
   app.use("/api/v1/auth", authRoutes);
   app.use("/api/v1/pharmacies", pharmacyRoutes);

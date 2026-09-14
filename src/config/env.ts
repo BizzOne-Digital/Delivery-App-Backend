@@ -23,8 +23,12 @@ const parsed = schema.safeParse(process.env);
 
 if (!parsed.success) {
   const missing = parsed.error.issues.map((i) => i.message).join("; ");
-  console.error("Environment validation failed:", missing);
+  const msg = `Environment validation failed: ${missing}`;
+  console.error(msg);
   if (process.env.NODE_ENV !== "test") {
+    if (process.env.VERCEL) {
+      throw new Error(msg);
+    }
     process.exit(1);
   }
 }
