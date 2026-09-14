@@ -10,7 +10,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node server.js",
-    "vercel-build": "npm run build",
+    "vercel-build": "npm run build && node scripts/vercel-postbuild.mjs",
     "seed": "tsx src/scripts/seed.ts",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",

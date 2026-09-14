@@ -7,7 +7,7 @@
 | Framework Preset | **Other** |
 | Root Directory | `.` (repo root) |
 | Build Command | `npm run build` |
-| **Output Directory** | **Override OFF** — field blank. Do **not** type `N/A`, `dist`, or `A` (build fails: "No Output Directory named A"). |
+| **Output Directory** | **Override OFF** (blank), or leave as **`public`** / **`A`** — `vercel-build` creates both folders so mis-typed `N/A` → `A` no longer breaks the build. |
 
 API entry: **`api/index.js`** (serverless). Local dev: `npm run dev` or `npm run build && npm start` (`server.js`).
 
