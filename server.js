@@ -2,18 +2,31 @@ import http from "node:http";
 import mongoose from "mongoose";
 import { createApp } from "./dist/createHttpApp.js";
 
-const uri = process.env.MONGODB_URI;
-if (!uri) {
-  throw new Error("MONGODB_URI is missing.");
+async function main() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    console.error("MONGODB_URI is missing — set it in Vercel Environment Variables.");
+    process.exit(1);
+  }
+
+  try {
+    await mongoose.connect(uri);
+    console.log("MongoDB connected");
+  } catch (err) {
+    console.error("MongoDB connection failed:", err);
+    process.exit(1);
+  }
+
+  const app = createApp();
+  const server = http.createServer(app);
+  const port = Number(process.env.PORT ?? 3000);
+
+  server.listen(port, () => {
+    console.log(`Delivery API listening on port ${port}`);
+  });
 }
 
-if (!globalThis.__mongoPromise) {
-  globalThis.__mongoPromise = mongoose.connect(uri);
-}
-await globalThis.__mongoPromise;
-
-const app = createApp();
-const server = http.createServer(app);
-server.listen(Number(process.env.PORT ?? 5000), "0.0.0.0", () => {
-  console.log(`API listening on port ${process.env.PORT ?? 5000}`);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });

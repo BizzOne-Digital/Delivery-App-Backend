@@ -9,7 +9,9 @@
 | Build Command | `npm run build` |
 | **Output Directory** | **leave empty** — do **not** set `dist` |
 
-If **Output Directory** is `dist`, Vercel treats `app.js` as a serverless function and you get:
+Entry file: **`server.js`** at repo root (calls `server.listen()`). Do **not** use an `api/` folder or Output Directory `dist`.
+
+If **Output Directory** is `dist`, or an old `api/index` handler is deployed, you may see:
 
 `Invalid export found in module "/var/task/app.js"`
 
