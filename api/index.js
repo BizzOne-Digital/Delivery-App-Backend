@@ -1,7 +1,7 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 
-let slsHandler;
+let expressApp;
 
 function requestPath(req) {
   const raw = req.url ?? "/";
@@ -22,8 +22,9 @@ async function connectMongo() {
   if (!globalThis.__mongoPromise) {
     globalThis.__mongoPromise = mongoose
       .connect(uri, {
-        serverSelectionTimeoutMS: 8000,
-        maxPoolSize: 5,
+        serverSelectionTimeoutMS: 10000,
+        maxPoolSize: 10,
+        minPoolSize: 1,
       })
       .catch((err) => {
         globalThis.__mongoPromise = undefined;
@@ -33,15 +34,18 @@ async function connectMongo() {
   await globalThis.__mongoPromise;
 }
 
-async function getHandler() {
-  if (slsHandler) return slsHandler;
-
+async function getExpressApp() {
+  if (expressApp) return expressApp;
   await connectMongo();
-
-  const serverless = (await import("serverless-http")).default;
   const { createApp } = await import("../dist/createHttpApp.js");
-  slsHandler = serverless(createApp());
-  return slsHandler;
+  expressApp = createApp();
+  return expressApp;
+}
+
+function sendJson(res, status, body) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify(body));
 }
 
 function healthResponse(res) {
@@ -57,14 +61,38 @@ function healthResponse(res) {
     });
   }
 
-  res.statusCode = 200;
-  res.setHeader("Content-Type", "application/json");
-  res.end(
-    JSON.stringify({
-      success: true,
-      data: { status: "ok", db },
-    }),
-  );
+  sendJson(res, 200, {
+    success: true,
+    data: { status: "ok", db },
+  });
+}
+
+function runExpress(app, req, res) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve(undefined);
+    };
+    res.on("finish", () => finish());
+    res.on("close", () => finish());
+    res.on("error", (err) => finish(err));
+    try {
+      app(req, res, (err) => finish(err));
+    } catch (err) {
+      finish(err);
+    }
+  });
+}
+
+// Warm Mongo on cold start so auth routes are not stuck behind first connect.
+if (process.env.MONGODB_URI && !globalThis.__mongoPromise) {
+  globalThis.__mongoPromise = connectMongo().catch((err) => {
+    console.error("Startup Mongo connect failed:", err);
+    globalThis.__mongoPromise = undefined;
+  });
 }
 
 export default async function handler(req, res) {
@@ -76,17 +104,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    const fn = await getHandler();
-    return fn(req, res);
+    const app = await getExpressApp();
+    await runExpress(app, req, res);
   } catch (err) {
-    console.error("API bootstrap failed:", err);
-    res.statusCode = 500;
-    res.setHeader("Content-Type", "application/json");
-    res.end(
-      JSON.stringify({
+    console.error("API request failed:", err);
+    if (!res.writableEnded) {
+      sendJson(res, 500, {
         success: false,
-        message: err instanceof Error ? err.message : "Server failed to start",
-      }),
-    );
+        error: {
+          message: err instanceof Error ? err.message : "Server failed to start",
+        },
+      });
+    }
   }
 }
