@@ -7,9 +7,9 @@
 | Framework Preset | **Other** |
 | Root Directory | `.` (repo root) |
 | Build Command | `npm run build` |
-| **Output Directory** | **leave empty** — do **not** set `dist` |
+| **Output Directory** | **Override OFF** — field blank. Do **not** type `N/A`, `dist`, or `A` (build fails: "No Output Directory named A"). |
 
-Entry file: **`server.js`** at repo root (calls `server.listen()`). Do **not** use an `api/` folder or Output Directory `dist`.
+API entry: **`api/index.js`** (serverless). Local dev: `npm run dev` or `npm run build && npm start` (`server.js`).
 
 If **Output Directory** is `dist`, or an old `api/index` handler is deployed, you may see:
 
