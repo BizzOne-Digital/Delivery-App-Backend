@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { User } from "../models/User.js";
+import { PharmacyApplication } from "../models/PharmacyApplication.js";
+import { PharmacyApplicationStatus } from "../types/enums.js";
 import {
   hashPassword,
   revokeRefreshToken,
@@ -25,8 +27,36 @@ const loginSchema = z.object({
 router.post("/login", asyncHandler(async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "Invalid credentials payload", 400);
-  const user = await User.findOne({ email: parsed.data.email.toLowerCase() }).select("+passwordHash");
-  if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+  const email = parsed.data.email.toLowerCase();
+  const user = await User.findOne({ email }).select("+passwordHash");
+  if (!user) {
+    const pending = await PharmacyApplication.findOne({
+      email,
+      status: PharmacyApplicationStatus.PENDING,
+    });
+    if (pending) {
+      return sendError(
+        res,
+        "Your pharmacy application is under review. We will email you when it is approved.",
+        403,
+        "PHARMACY_APPLICATION_PENDING",
+      );
+    }
+    const rejected = await PharmacyApplication.findOne({
+      email,
+      status: PharmacyApplicationStatus.REJECTED,
+    }).sort({ createdAt: -1 });
+    if (rejected) {
+      return sendError(
+        res,
+        rejected.rejectionReason ?? "Your pharmacy application was not approved.",
+        403,
+        "PHARMACY_APPLICATION_REJECTED",
+      );
+    }
+    return sendError(res, "Invalid email or password", 401);
+  }
+  if (!(await verifyPassword(parsed.data.password, user.passwordHash))) {
     return sendError(res, "Invalid email or password", 401);
   }
   if (!user.active) return sendError(res, "Account disabled", 403);
@@ -68,6 +98,23 @@ router.post("/logout", authenticate, asyncHandler(async (req, res) => {
 
 router.get("/me", authenticate, asyncHandler(async (req, res) => {
   sendSuccess(res, req.auth!.user);
+}));
+
+router.post("/me/push-token", authenticate, asyncHandler(async (req, res) => {
+  const schema = z.object({ token: z.string().min(10) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return sendError(res, "Invalid push token", 400);
+
+  const user = await User.findById(req.auth!.id);
+  if (!user) return sendError(res, "Not found", 404);
+
+  const token = parsed.data.token.trim();
+  const tokens = user.expoPushTokens ?? [];
+  if (!tokens.includes(token)) {
+    user.expoPushTokens = [...tokens, token].slice(-5);
+    await user.save();
+  }
+  sendSuccess(res, { ok: true });
 }));
 
 router.patch("/me", authenticate, asyncHandler(async (req, res) => {

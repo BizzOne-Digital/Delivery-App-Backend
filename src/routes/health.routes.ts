@@ -9,6 +9,7 @@ router.get("/", (_req, res) => {
     data: {
       status: "ok",
       db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+      apiFeatures: ["orders-delivery-date-patch"],
     },
   });
 });

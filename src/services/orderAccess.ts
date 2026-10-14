@@ -1,7 +1,19 @@
-import type { IOrder } from "../models/Order.js";
+import mongoose from "mongoose";
+import { Order, type IOrder } from "../models/Order.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { UserRole } from "../types/enums.js";
 import { Customer } from "../models/Customer.js";
+
+/** Resolve Mongo id or reference number (e.g. JD-…) from route params. */
+export async function findOrderByIdOrReference(idParam: string): Promise<IOrder | null> {
+  const raw = idParam.trim();
+  if (!raw) return null;
+  if (mongoose.Types.ObjectId.isValid(raw)) {
+    const byId = await Order.findById(raw);
+    if (byId) return byId;
+  }
+  return Order.findOne({ referenceNumber: raw });
+}
 
 export async function buildOrderListFilter(auth: AuthUser): Promise<Record<string, unknown>> {
   const filter: Record<string, unknown> = {};

@@ -24,6 +24,7 @@ export interface IUser extends Document {
   emailVerified: boolean;
   lastLoginAt?: Date;
   notificationPreferences: Record<string, boolean>;
+  expoPushTokens: string[];
   driverStatus?: string;
   onboardingStatus?: string;
   profilePhotoUrl?: string;
@@ -68,6 +69,7 @@ const userSchema = new Schema<IUser>(
     emailVerified: { type: Boolean, default: false },
     lastLoginAt: Date,
     notificationPreferences: { type: Schema.Types.Mixed, default: {} },
+    expoPushTokens: { type: [String], default: [] },
     driverStatus: { type: String, enum: Object.values(DriverStatus), default: DriverStatus.OFFLINE },
     onboardingStatus: {
       type: String,

@@ -1,5 +1,24 @@
+import { env } from "../config/env.js";
 import { haversineKm } from "../utils/haversine.js";
 import type { ServiceZone } from "../models/Pharmacy.js";
+
+export function pharmacyDistanceKm(
+  pharmacy: { latitude: number; longitude: number },
+  lat: number,
+  lng: number,
+): number {
+  return haversineKm(lat, lng, pharmacy.latitude, pharmacy.longitude);
+}
+
+/** Pharmacies within radius (default 50 km) of the patient location. */
+export function pharmacyWithinPatientRadius(
+  pharmacy: { latitude: number; longitude: number },
+  lat: number,
+  lng: number,
+  radiusKm = env.PHARMACY_NEARBY_RADIUS_KM,
+): boolean {
+  return pharmacyDistanceKm(pharmacy, lat, lng) <= radiusKm;
+}
 
 export function pointInServiceZone(lat: number, lng: number, zone: ServiceZone): boolean {
   const dist = haversineKm(lat, lng, zone.centerLat, zone.centerLng);

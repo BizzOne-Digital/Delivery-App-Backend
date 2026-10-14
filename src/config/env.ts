@@ -17,6 +17,7 @@ const schema = z.object({
   CLAIM_WINDOW_HOURS_BEFORE: z.coerce.number().default(24),
   DRIVER_SCHEDULE_VISIBILITY_DAYS: z.coerce.number().default(7),
   GPS_STALE_THRESHOLD_MINUTES: z.coerce.number().default(5),
+  PHARMACY_NEARBY_RADIUS_KM: z.coerce.number().default(50),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -49,4 +50,5 @@ export const env = parsed.success
       CLAIM_WINDOW_HOURS_BEFORE: 24,
       DRIVER_SCHEDULE_VISIBILITY_DAYS: 7,
       GPS_STALE_THRESHOLD_MINUTES: 5,
+      PHARMACY_NEARBY_RADIUS_KM: 50,
     };

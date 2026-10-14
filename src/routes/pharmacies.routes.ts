@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { Pharmacy } from "../models/Pharmacy.js";
+import { Pharmacy, type IPharmacy } from "../models/Pharmacy.js";
 import { authenticate } from "../middleware/auth.js";
 import { sendSuccess, sendError } from "../utils/apiResponse.js";
-import { pharmacyServesLocation } from "../services/zoneService.js";
+import { pharmacyDistanceKm, pharmacyWithinPatientRadius } from "../services/zoneService.js";
+import { env } from "../config/env.js";
 import { z } from "zod";
 import { isValidHexColor } from "../utils/pharmacyColors.js";
 import { UserRole } from "../types/enums.js";
@@ -10,30 +11,48 @@ import { requireRoles } from "../middleware/auth.js";
 
 const router = Router();
 
+function mapPharmacyWithDistance(pharmacy: IPharmacy, lat: number, lng: number) {
+  const doc = pharmacy.toObject ? pharmacy.toObject() : pharmacy;
+  const distanceKm = pharmacyDistanceKm(pharmacy, lat, lng);
+  return { ...doc, distanceKm: Math.round(distanceKm * 10) / 10 };
+}
+
 router.get("/", authenticate, async (req, res) => {
   const { lat, lng, activeOnly } = req.query;
   const filter: Record<string, unknown> = {};
   if (req.auth!.companyId) filter.companyId = req.auth!.companyId;
   if (activeOnly === "true") filter.active = true;
 
+  const radiusKm = env.PHARMACY_NEARBY_RADIUS_KM;
+
   if (req.auth!.role === UserRole.PATIENT) {
     if (!lat || !lng) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, { radiusKm, items: [] });
     }
     const latitude = Number(lat);
     const longitude = Number(lng);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return sendError(res, "Invalid coordinates", 400);
+    }
     const items = await Pharmacy.find({ ...filter, active: true });
-    return sendSuccess(
-      res,
-      items.filter((p) => pharmacyServesLocation(p, latitude, longitude)),
-    );
+    const nearby = items
+      .filter((p) => pharmacyWithinPatientRadius(p, latitude, longitude, radiusKm))
+      .map((p) => mapPharmacyWithDistance(p, latitude, longitude))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+    return sendSuccess(res, { radiusKm, items: nearby });
   }
 
   let items = await Pharmacy.find(filter);
   if (lat && lng) {
     const latitude = Number(lat);
     const longitude = Number(lng);
-    items = items.filter((p) => p.active && pharmacyServesLocation(p, latitude, longitude));
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      const withDist = items
+        .filter((p) => p.active && pharmacyWithinPatientRadius(p, latitude, longitude, radiusKm))
+        .map((p) => mapPharmacyWithDistance(p, latitude, longitude))
+        .sort((a, b) => a.distanceKm - b.distanceKm);
+      return sendSuccess(res, withDist);
+    }
   }
   sendSuccess(res, items);
 });
@@ -49,30 +68,30 @@ router.patch(
   authenticate,
   requireRoles(UserRole.COMPANY_ADMIN, UserRole.SUPER_ADMIN, UserRole.PHARMACY_ADMIN),
   async (req, res) => {
-  const schema = z.object({
-    displayColor: z.string().optional(),
-    secondaryColor: z.string().optional(),
-    dispatchMode: z.string().optional(),
-  });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return sendError(res, "Invalid", 400);
-  if (parsed.data.displayColor && !isValidHexColor(parsed.data.displayColor)) {
-    return sendError(res, "Invalid display color", 400);
-  }
-  const existing = await Pharmacy.findById(req.params.id);
-  if (!existing) return sendError(res, "Not found", 404);
-  if (
-    req.auth!.role === UserRole.PHARMACY_ADMIN &&
-    req.auth!.pharmacyId &&
-    String(existing._id) !== req.auth!.pharmacyId
-  ) {
-    return sendError(res, "Forbidden", 403);
-  }
-  if (req.auth!.companyId && String(existing.companyId) !== req.auth!.companyId) {
-    return sendError(res, "Forbidden", 403);
-  }
-  const ph = await Pharmacy.findByIdAndUpdate(req.params.id, parsed.data, { new: true });
-  sendSuccess(res, ph);
+    const schema = z.object({
+      displayColor: z.string().optional(),
+      secondaryColor: z.string().optional(),
+      dispatchMode: z.string().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return sendError(res, "Invalid", 400);
+    if (parsed.data.displayColor && !isValidHexColor(parsed.data.displayColor)) {
+      return sendError(res, "Invalid display color", 400);
+    }
+    const existing = await Pharmacy.findById(req.params.id);
+    if (!existing) return sendError(res, "Not found", 404);
+    if (
+      req.auth!.role === UserRole.PHARMACY_ADMIN &&
+      req.auth!.pharmacyId &&
+      String(existing._id) !== req.auth!.pharmacyId
+    ) {
+      return sendError(res, "Forbidden", 403);
+    }
+    if (req.auth!.companyId && String(existing.companyId) !== req.auth!.companyId) {
+      return sendError(res, "Forbidden", 403);
+    }
+    const ph = await Pharmacy.findByIdAndUpdate(req.params.id, parsed.data, { new: true });
+    sendSuccess(res, ph);
   },
 );
 

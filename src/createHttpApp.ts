@@ -11,6 +11,8 @@ import orderRoutes from "./routes/orders.routes.js";
 import customerRoutes from "./routes/customers.routes.js";
 import cashRoutes from "./routes/cash.routes.js";
 import driversRoutes from "./routes/drivers.routes.js";
+import pharmacyApplicationsRoutes from "./routes/pharmacyApplications.routes.js";
+import pharmacyMessagesRoutes from "./routes/pharmacyMessages.routes.js";
 import { sendError } from "./utils/apiResponse.js";
 
 export function createApp() {
@@ -51,6 +53,8 @@ export function createApp() {
   app.use("/api/v1/customers", customerRoutes);
   app.use("/api/v1/cash", cashRoutes);
   app.use("/api/v1/drivers", driversRoutes);
+  app.use("/api/v1/pharmacy-applications", pharmacyApplicationsRoutes);
+  app.use("/api/v1/pharmacy-messages", pharmacyMessagesRoutes);
 
   app.use((_req, res) => sendError(res, "Not found", 404));
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

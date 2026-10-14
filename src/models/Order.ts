@@ -13,6 +13,10 @@ export interface IOrder extends Document {
   claimedAt?: Date;
   pickedUpAt?: Date;
   deliveryDate: Date;
+  /** Calendar day YYYY-MM-DD (pharmacy-selected); used for planner grouping */
+  deliveryDay?: string;
+  /** True after pharmacy confirms delivery day via PATCH /delivery-date */
+  deliveryDayConfirmed?: boolean;
   timeWindowStart?: string;
   timeWindowEnd?: string;
   priority: string;
@@ -62,6 +66,8 @@ const orderSchema = new Schema<IOrder>(
     claimedAt: Date,
     pickedUpAt: Date,
     deliveryDate: { type: Date, required: true, index: true },
+    deliveryDay: { type: String, index: true },
+    deliveryDayConfirmed: { type: Boolean, default: false },
     timeWindowStart: String,
     timeWindowEnd: String,
     priority: { type: String, enum: Object.values(OrderPriority), default: OrderPriority.NORMAL },

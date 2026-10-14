@@ -29,6 +29,12 @@ export const DriverOnboardingStatus = {
   SUSPENDED: "SUSPENDED",
 } as const;
 
+export const PharmacyApplicationStatus = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+} as const;
+
 export const DispatchMode = {
   OPEN_POOL: "OPEN_POOL",
   ASSIGNED: "ASSIGNED",
