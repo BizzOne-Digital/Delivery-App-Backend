@@ -8,8 +8,10 @@ import { z } from "zod";
 import { isValidHexColor } from "../utils/pharmacyColors.js";
 import { UserRole } from "../types/enums.js";
 import { requireRoles } from "../middleware/auth.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = Router();
+const PHARMACY_PORTAL_ROLES = [UserRole.PHARMACY_ADMIN, UserRole.PHARMACY_STAFF];
 
 function mapPharmacyWithDistance(pharmacy: IPharmacy, lat: number, lng: number) {
   const doc = pharmacy.toObject ? pharmacy.toObject() : pharmacy;
@@ -56,6 +58,35 @@ router.get("/", authenticate, async (req, res) => {
   }
   sendSuccess(res, items);
 });
+
+router.patch(
+  "/me/location",
+  authenticate,
+  requireRoles(...PHARMACY_PORTAL_ROLES),
+  asyncHandler(async (req, res) => {
+    const pharmacyId = req.auth!.pharmacyId;
+    if (!pharmacyId) return sendError(res, "Pharmacy not linked", 400);
+
+    const schema = z.object({
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+      address: z.string().max(500).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return sendError(res, "Invalid location", 400);
+
+    const ph = await Pharmacy.findById(pharmacyId);
+    if (!ph) return sendError(res, "Pharmacy not found", 404);
+
+    ph.latitude = parsed.data.latitude;
+    ph.longitude = parsed.data.longitude;
+    if (parsed.data.address?.trim()) {
+      ph.address = parsed.data.address.trim();
+    }
+    await ph.save();
+    sendSuccess(res, ph);
+  }),
+);
 
 router.get("/:id", authenticate, async (req, res) => {
   const ph = await Pharmacy.findById(req.params.id);

@@ -4,8 +4,10 @@ import { Pharmacy } from "../models/Pharmacy.js";
 import { PharmacyMessage } from "../models/PharmacyMessage.js";
 import { User } from "../models/User.js";
 import { authenticate, requireRoles } from "../middleware/auth.js";
-import { notifyPatientPharmacyReply } from "../services/pharmacyMessageNotify.js";
-import { notifyPharmacyStaffPatientMessage } from "../services/pushNotificationService.js";
+import {
+  notifyPatientPharmacyMessage,
+  notifyPharmacyStaffPatientMessage,
+} from "../services/pushNotificationService.js";
 import { UserRole } from "../types/enums.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendError, sendSuccess } from "../utils/apiResponse.js";
@@ -158,7 +160,12 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
       readByPharmacyAt: new Date(),
     });
 
-    void notifyPatientPharmacyReply(patientUserId, pharmacy.name, body).catch(console.error);
+    void notifyPatientPharmacyMessage(
+      patientUserId,
+      String(pharmacy._id),
+      pharmacy.name,
+      body,
+    ).catch(console.error);
     return sendSuccess(res, msg, 201);
   }
 

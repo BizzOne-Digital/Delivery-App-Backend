@@ -22,7 +22,7 @@ function statusLabel(status: string) {
 
 async function sendExpoPush(
   tokens: string[],
-  message: { title: string; body: string; data?: Record<string, string> },
+  message: { title: string; body: string; data?: Record<string, string>; channelId?: string },
 ) {
   const unique = [...new Set(tokens.filter((t) => t.startsWith("ExponentPushToken")))];
   if (!unique.length) return;
@@ -34,7 +34,7 @@ async function sendExpoPush(
     body: message.body,
     data: message.data ?? {},
     priority: "high",
-    channelId: "order-updates",
+    channelId: message.channelId ?? "order-updates",
   }));
 
   try {
@@ -125,6 +125,7 @@ async function notifyPharmacyStaff(
         title: opts.title,
         body: opts.body,
         data: opts.data,
+        channelId: opts.type === "PHARMACY_MESSAGE" ? "messages" : "order-updates",
       });
     }
   }
@@ -197,5 +198,46 @@ export async function notifyPharmacyStaffPatientMessage(
       patientUserId,
       pharmacyId: String(pharmacyId),
     },
+  });
+}
+
+/** Patient push when pharmacy sends a chat reply. */
+export async function notifyPatientPharmacyMessage(
+  patientUserId: string,
+  pharmacyId: string,
+  pharmacyName: string,
+  preview: string,
+) {
+  const user = await User.findById(patientUserId);
+  if (!user?.active || user.role !== UserRole.PATIENT) return;
+
+  const prefs = user.notificationPreferences ?? {};
+  if (prefs.pharmacyMessages === false) return;
+
+  const title = `Message from ${pharmacyName}`;
+  const body = preview.slice(0, 120);
+
+  await Notification.create({
+    userId: user._id,
+    title,
+    body,
+    type: "PHARMACY_MESSAGE",
+    data: { pharmacyId, pharmacyName },
+  });
+
+  const tokens: string[] = Array.isArray(user.expoPushTokens)
+    ? user.expoPushTokens.filter(Boolean)
+    : [];
+  if (!tokens.length) return;
+
+  await sendExpoPush(tokens, {
+    title,
+    body,
+    data: {
+      type: "PHARMACY_MESSAGE",
+      pharmacyId,
+      pharmacyName,
+    },
+    channelId: "messages",
   });
 }
