@@ -17,6 +17,10 @@ import { authenticate } from "../middleware/auth.js";
 import { Company } from "../models/Company.js";
 import { DriverOnboardingStatus, UserRole } from "../types/enums.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import {
+  requestPasswordResetOtp,
+  resetPasswordWithOtp,
+} from "../services/passwordResetService.js";
 
 const router = Router();
 
@@ -182,16 +186,36 @@ router.post("/register-driver", asyncHandler(async (req, res) => {
 }));
 
 router.post("/forgot-password", asyncHandler(async (req, res) => {
-  const email = (req.body as { email?: string }).email;
-  if (!email) return sendError(res, "Email required", 400);
-  const user = await User.findOne({ email: email.toLowerCase() });
-  if (!user) {
-    return sendSuccess(res, { message: "If the account exists, reset instructions were sent." });
-  }
-  if (process.env.NODE_ENV === "development") {
-    console.info("[dev] Password reset requested for", user.email);
-  }
-  sendSuccess(res, { message: "If the account exists, reset instructions were sent." });
+  const schema = z.object({ email: z.string().email() });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return sendError(res, "Valid email required", 400);
+
+  const { delivered, devOtp } = await requestPasswordResetOtp(parsed.data.email);
+
+  sendSuccess(res, {
+    message: "If the account exists, a verification code was sent to your email.",
+    emailSent: delivered,
+    ...(devOtp ? { devOtp } : {}),
+  });
+}));
+
+router.post("/reset-password-otp", asyncHandler(async (req, res) => {
+  const schema = z.object({
+    email: z.string().email(),
+    code: z.string().min(4).max(12),
+    newPassword: z.string().min(8),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return sendError(res, "Invalid reset payload", 400);
+
+  const ok = await resetPasswordWithOtp(
+    parsed.data.email,
+    parsed.data.code,
+    parsed.data.newPassword,
+  );
+  if (!ok) return sendError(res, "Invalid or expired code", 400);
+
+  sendSuccess(res, { ok: true, message: "Password updated. You can sign in now." });
 }));
 
 router.post("/change-password", authenticate, asyncHandler(async (req, res) => {

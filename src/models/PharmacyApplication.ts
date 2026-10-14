@@ -4,6 +4,11 @@ import { PharmacyApplicationStatus } from "../types/enums.js";
 export interface IPharmacyApplication extends Document {
   companyId?: Types.ObjectId;
   status: string;
+  yourCompanyName?: string;
+  clientCompanyName?: string;
+  clientPostalAddress?: string;
+  pickupAddress?: string;
+  mobilusBillingAuthorized?: boolean;
   pharmacyName: string;
   contactName: string;
   email: string;
@@ -32,6 +37,11 @@ const schema = new Schema<IPharmacyApplication>(
       default: PharmacyApplicationStatus.PENDING,
       index: true,
     },
+    yourCompanyName: String,
+    clientCompanyName: String,
+    clientPostalAddress: String,
+    pickupAddress: String,
+    mobilusBillingAuthorized: Boolean,
     pharmacyName: { type: String, required: true },
     contactName: { type: String, required: true },
     email: { type: String, required: true, lowercase: true, index: true },

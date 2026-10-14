@@ -39,6 +39,9 @@ export interface IUser extends Document {
   approvedBy?: Types.ObjectId;
   approvedAt?: Date;
   rejectionReason?: string;
+  lastLatitude?: number;
+  lastLongitude?: number;
+  lastLocationAt?: Date;
   weeklyAvailability?: { dayOfWeek: number; start: string; end: string }[];
   refreshTokenHash?: string;
   createdAt: Date;
@@ -88,6 +91,9 @@ const userSchema = new Schema<IUser>(
     approvedBy: Schema.Types.ObjectId,
     approvedAt: Date,
     rejectionReason: String,
+    lastLatitude: Number,
+    lastLongitude: Number,
+    lastLocationAt: Date,
     weeklyAvailability: [{ dayOfWeek: Number, start: String, end: String }],
     refreshTokenHash: { type: String, select: false },
   },

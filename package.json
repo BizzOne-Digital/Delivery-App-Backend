@@ -14,7 +14,8 @@
     "seed": "tsx src/scripts/seed.ts",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify-smtp": "tsx src/scripts/verify-smtp.ts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -26,6 +27,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.6.0",
     "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.1.1",
     "serverless-http": "^4.0.0",
     "socket.io": "^4.7.5",
     "zod": "^3.23.8"
@@ -37,6 +39,7 @@
     "@types/jsonwebtoken": "^9.0.6",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.5.4",
+    "@types/nodemailer": "^8.0.2",
     "@types/supertest": "^6.0.2",
     "@typescript-eslint/eslint-plugin": "^8.4.0",
     "@typescript-eslint/parser": "^8.4.0",

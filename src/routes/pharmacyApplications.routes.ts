@@ -7,7 +7,10 @@ import { PharmacyApplication } from "../models/PharmacyApplication.js";
 import { User } from "../models/User.js";
 import { authenticate, requireRoles } from "../middleware/auth.js";
 import { hashPassword } from "../services/authService.js";
-import { sendPharmacyLoginCredentialsEmail } from "../services/emailService.js";
+import {
+  sendPharmacyApplicationRejectedEmail,
+  sendPharmacyLoginCredentialsEmail,
+} from "../services/emailService.js";
 import { notifyAdminsNewPharmacyApplication } from "../services/pharmacyApplicationNotify.js";
 import {
   DispatchMode,
@@ -24,24 +27,28 @@ const router = Router();
 
 const ADMIN_ROLES = [UserRole.SUPER_ADMIN, UserRole.COMPANY_ADMIN, UserRole.DISPATCHER] as const;
 
-const applySchema = z.object({
-  pharmacyName: z.string().min(2),
-  contactName: z.string().min(2),
-  email: z.string().email(),
-  phone: z.string().min(8),
-  address: z.string().min(5),
-  city: z.string().optional(),
-  province: z.string().optional(),
-  postalCode: z.string().optional(),
-  licenseNumber: z.string().optional(),
-  notes: z.string().optional(),
-});
+const applySchema = z
+  .object({
+    yourCompanyName: z.string().min(2),
+    clientCompanyName: z.string().min(2),
+    clientPostalAddress: z.string().min(5),
+    pickupAddress: z.string().min(3),
+    clientPhone: z.string().min(8),
+    clientMainContact: z.string().min(2),
+    mainContactEmail: z.string().email(),
+    notes: z.string().optional(),
+    mobilusBillingAuthorized: z.enum(["yes", "no"]),
+  })
+  .refine((d) => d.mobilusBillingAuthorized === "yes", {
+    message: "Billing authorization is required to open an account",
+    path: ["mobilusBillingAuthorized"],
+  });
 
 router.post("/", asyncHandler(async (req, res) => {
   const parsed = applySchema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "Invalid application data", 400);
 
-  const email = parsed.data.email.toLowerCase();
+  const email = parsed.data.mainContactEmail.toLowerCase();
   const existingUser = await User.findOne({ email });
   if (existingUser) {
     return sendError(res, "An account already exists for this email. Please sign in.", 409);
@@ -56,9 +63,25 @@ router.post("/", asyncHandler(async (req, res) => {
   }
 
   const company = await Company.findOne().sort({ createdAt: 1 });
+  const d = parsed.data;
   const application = await PharmacyApplication.create({
-    ...parsed.data,
+    yourCompanyName: d.yourCompanyName.trim(),
+    clientCompanyName: d.clientCompanyName.trim(),
+    clientPostalAddress: d.clientPostalAddress.trim(),
+    pickupAddress: d.pickupAddress.trim(),
+    mobilusBillingAuthorized: true,
+    pharmacyName: d.clientCompanyName.trim(),
+    contactName: d.clientMainContact.trim(),
     email,
+    phone: d.clientPhone.trim(),
+    address: d.pickupAddress.trim(),
+    notes: [
+      d.notes?.trim(),
+      `Applicant company: ${d.yourCompanyName.trim()}`,
+      `Postal address: ${d.clientPostalAddress.trim()}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
     companyId: company?._id,
     status: PharmacyApplicationStatus.PENDING,
   });
@@ -156,7 +179,13 @@ router.post("/:id/approve", authenticate, requireRoles(...ADMIN_ROLES), asyncHan
       ? parsed.data.displayColor
       : "#3B82F6";
 
-  const fullAddress = [application.address, application.city, application.province, application.postalCode]
+  const fullAddress = [
+    application.pickupAddress || application.address,
+    application.clientPostalAddress,
+    application.city,
+    application.province,
+    application.postalCode,
+  ]
     .filter(Boolean)
     .join(", ");
   const geocoded = await geocodePlace(fullAddress);
@@ -206,18 +235,26 @@ router.post("/:id/approve", authenticate, requireRoles(...ADMIN_ROLES), asyncHan
   application.approvedUserId = user._id;
   await application.save();
 
-  void sendPharmacyLoginCredentialsEmail(
-    application.email,
-    application.pharmacyName,
-    email,
-    password,
-  ).catch((err) => console.error("Email send failed:", err));
+  let credentialsEmailSent = false;
+  try {
+    const mailResult = await sendPharmacyLoginCredentialsEmail(
+      application.email,
+      application.pharmacyName,
+      email,
+      password,
+    );
+    credentialsEmailSent = mailResult.delivered;
+  } catch (err) {
+    console.error("Email send failed:", err);
+  }
 
   sendSuccess(res, {
     pharmacyId: pharmacy._id,
     userId: user._id,
     loginEmail: email,
-    temporaryPassword: parsed.data.password ? undefined : password,
+    credentialsEmailSent,
+    temporaryPassword:
+      !credentialsEmailSent && !parsed.data.password ? password : undefined,
   });
 }));
 
@@ -237,6 +274,12 @@ router.post("/:id/reject", authenticate, requireRoles(...ADMIN_ROLES), asyncHand
   application.reviewedBy = new mongoose.Types.ObjectId(req.auth!.id);
   application.reviewedAt = new Date();
   await application.save();
+
+  void sendPharmacyApplicationRejectedEmail(
+    application.email,
+    application.pharmacyName,
+    parsed.data.reason,
+  ).catch((err) => console.error("Rejection email failed:", err));
 
   sendSuccess(res, application);
 }));
