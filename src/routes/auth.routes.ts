@@ -14,7 +14,8 @@ import {
 } from "../services/authService.js";
 import { sendError, sendSuccess } from "../utils/apiResponse.js";
 import { authenticate } from "../middleware/auth.js";
-import { UserRole } from "../types/enums.js";
+import { Company } from "../models/Company.js";
+import { DriverOnboardingStatus, UserRole } from "../types/enums.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = Router();
@@ -166,12 +167,15 @@ router.post("/register-driver", asyncHandler(async (req, res) => {
   const exists = await User.findOne({ email: parsed.data.email.toLowerCase() });
   if (exists) return sendError(res, "Email already registered", 409);
   const passwordHash = await hashPassword(parsed.data.password);
+  const company = await Company.findOne().sort({ createdAt: 1 });
   const user = await User.create({
     ...parsed.data,
     email: parsed.data.email.toLowerCase(),
     passwordHash,
     role: UserRole.DRIVER,
-    onboardingStatus: "SUBMITTED",
+    companyId: company?._id,
+    active: true,
+    onboardingStatus: DriverOnboardingStatus.APPROVED,
     driverStatus: "OFFLINE",
   });
   sendSuccess(res, { userId: user._id }, 201);

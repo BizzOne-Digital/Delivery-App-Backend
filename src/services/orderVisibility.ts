@@ -13,6 +13,11 @@ function driverApproved(driver: IUser) {
   );
 }
 
+/** Browse ready pool (claim still requires admin-approved driver). */
+function driverCanBrowseReadyPool(driver: IUser) {
+  return driver.role === UserRole.DRIVER && driver.active;
+}
+
 function isOrderOwnedByDriver(order: IOrder, driver: IUser) {
   return Boolean(order.assignedDriverId && String(order.assignedDriverId) === String(driver._id));
 }
@@ -32,7 +37,7 @@ export function canDriverSeeReadyOrder(
   driverLng: number,
   radiusKm = env.PHARMACY_NEARBY_RADIUS_KM,
 ): boolean {
-  if (!driverApproved(driver)) return false;
+  if (!driverCanBrowseReadyPool(driver)) return false;
   if (order.status !== OrderStatus.READY) return false;
   if (!pharmacy.active) return false;
   if (!pharmacyWithinPatientRadius(pharmacy, driverLat, driverLng, radiusKm)) return false;

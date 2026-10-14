@@ -2,6 +2,24 @@ import { env } from "../config/env.js";
 import { haversineKm } from "../utils/haversine.js";
 import type { ServiceZone } from "../models/Pharmacy.js";
 
+const PLACEHOLDER_TORONTO_LAT = 43.6532;
+const PLACEHOLDER_TORONTO_LNG = -79.3832;
+
+/** Pharmacies still on the default approval pin are hidden until GPS is saved. */
+export function pharmacyLocationReadyForNearby(
+  pharmacy: { latitude: number; longitude: number; locationConfirmedAt?: Date | null },
+): boolean {
+  if (pharmacy.locationConfirmedAt) return true;
+  const lat = pharmacy.latitude;
+  const lng = pharmacy.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  if (lat === 0 && lng === 0) return false;
+  const isPlaceholder =
+    Math.abs(lat - PLACEHOLDER_TORONTO_LAT) < 0.0002 &&
+    Math.abs(lng - PLACEHOLDER_TORONTO_LNG) < 0.0002;
+  return !isPlaceholder;
+}
+
 export function pharmacyDistanceKm(
   pharmacy: { latitude: number; longitude: number },
   lat: number,
@@ -17,6 +35,7 @@ export function pharmacyWithinPatientRadius(
   lng: number,
   radiusKm = env.PHARMACY_NEARBY_RADIUS_KM,
 ): boolean {
+  if (!pharmacyLocationReadyForNearby(pharmacy)) return false;
   return pharmacyDistanceKm(pharmacy, lat, lng) <= radiusKm;
 }
 

@@ -37,6 +37,7 @@ import {
   notifyPatientOrderStatusChange,
   notifyPharmacyNewOrder,
   notifyPharmacyOrderStatusChange,
+  notifyDriversOrderReady,
 } from "../services/pushNotificationService.js";
 import { ensureShiftStarted, maybeCloseShiftAfterDelivery } from "../services/driverShiftService.js";
 import { mergeStatusTimestamps } from "../services/orderStatusTimestamps.js";
@@ -553,6 +554,11 @@ router.patch("/:id/status", authenticate, asyncHandler(async (req, res) => {
   void notifyPharmacyOrderStatusChange(order, previousStatus).catch((err) => {
     console.error("Pharmacy order status notification failed:", err);
   });
+  if (order.status === OrderStatus.READY && previousStatus !== OrderStatus.READY) {
+    void notifyDriversOrderReady(order).catch((err) => {
+      console.error("Driver new-order notification failed:", err);
+    });
+  }
 
   if (req.auth!.role === UserRole.DRIVER && status === OrderStatus.COMPLETED) {
     await maybeCloseShiftAfterDelivery(req.auth!.user!);

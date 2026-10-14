@@ -18,6 +18,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendError, sendSuccess } from "../utils/apiResponse.js";
 import { generateTemporaryPassword, slugPharmacyCode } from "../utils/generatePassword.js";
 import { isValidHexColor } from "../utils/pharmacyColors.js";
+import { geocodePlace } from "../utils/geocodePlace.js";
 
 const router = Router();
 
@@ -155,6 +156,13 @@ router.post("/:id/approve", authenticate, requireRoles(...ADMIN_ROLES), asyncHan
       ? parsed.data.displayColor
       : "#3B82F6";
 
+  const fullAddress = [application.address, application.city, application.province, application.postalCode]
+    .filter(Boolean)
+    .join(", ");
+  const geocoded = await geocodePlace(fullAddress);
+  const latitude = geocoded?.lat ?? 0;
+  const longitude = geocoded?.lng ?? 0;
+
   const pharmacy = await Pharmacy.create({
     companyId,
     name: application.pharmacyName,
@@ -163,11 +171,10 @@ router.post("/:id/approve", authenticate, requireRoles(...ADMIN_ROLES), asyncHan
     email: application.email,
     phone: application.phone,
     contactPerson: application.contactName,
-    address: [application.address, application.city, application.province, application.postalCode]
-      .filter(Boolean)
-      .join(", "),
-    latitude: 43.6532,
-    longitude: -79.3832,
+    address: fullAddress,
+    latitude,
+    longitude,
+    locationConfirmedAt: geocoded ? new Date() : undefined,
     serviceZones: [],
     dispatchMode: DispatchMode.HYBRID,
     active: true,

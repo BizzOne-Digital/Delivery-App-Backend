@@ -63,6 +63,19 @@ router.get("/", authenticate, async (req, res) => {
   sendSuccess(res, items);
 });
 
+router.get(
+  "/me",
+  authenticate,
+  requireRoles(...PHARMACY_PORTAL_ROLES),
+  asyncHandler(async (req, res) => {
+    const pharmacyId = req.auth!.pharmacyId;
+    if (!pharmacyId) return sendError(res, "Pharmacy not linked", 400);
+    const ph = await Pharmacy.findById(pharmacyId);
+    if (!ph) return sendError(res, "Pharmacy not found", 404);
+    sendSuccess(res, ph);
+  }),
+);
+
 router.patch(
   "/me/location",
   authenticate,
@@ -84,6 +97,7 @@ router.patch(
 
     ph.latitude = parsed.data.latitude;
     ph.longitude = parsed.data.longitude;
+    ph.locationConfirmedAt = new Date();
     if (parsed.data.address?.trim()) {
       ph.address = parsed.data.address.trim();
     }

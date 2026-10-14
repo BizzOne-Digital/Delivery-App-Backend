@@ -1,8 +1,10 @@
 import { Notification } from "../models/Notification.js";
 import { Customer } from "../models/Customer.js";
 import { User } from "../models/User.js";
+import { Pharmacy } from "../models/Pharmacy.js";
 import type { IOrder } from "../models/Order.js";
-import { OrderStatus, UserRole } from "../types/enums.js";
+import { DriverOnboardingStatus, OrderStatus, UserRole } from "../types/enums.js";
+import { driverInZone } from "./zoneService.js";
 
 const PHARMACY_STAFF_ROLES = [UserRole.PHARMACY_ADMIN, UserRole.PHARMACY_STAFF];
 
@@ -307,4 +309,52 @@ export async function notifyPatientPharmacyMessage(
     },
     channelId: "messages",
   });
+}
+
+/** Notify drivers in reach when an order is ready to claim. */
+export async function notifyDriversOrderReady(order: IOrder) {
+  if (order.status !== OrderStatus.READY) return;
+
+  const pharmacy = await Pharmacy.findById(order.pharmacyId);
+  if (!pharmacy?.active) return;
+
+  const filter: Record<string, unknown> = {
+    role: UserRole.DRIVER,
+    active: true,
+    onboardingStatus: DriverOnboardingStatus.APPROVED,
+  };
+  if (order.companyId) filter.companyId = order.companyId;
+
+  const drivers = await User.find(filter);
+  const title = "New order ready";
+  const body = `${order.referenceNumber} at ${pharmacy.name}`;
+
+  for (const driver of drivers) {
+    const prefs = driver.notificationPreferences ?? {};
+    if (prefs.orderUpdates === false) continue;
+
+    if (!driverInZone(driver.serviceZones, pharmacy.latitude, pharmacy.longitude)) continue;
+
+    await Notification.create({
+      userId: driver._id,
+      title,
+      body,
+      type: "DRIVER_NEW_ORDER",
+      data: { orderId: String(order._id), pharmacyId: String(pharmacy._id) },
+    });
+
+    const tokens = Array.isArray(driver.expoPushTokens) ? driver.expoPushTokens.filter(Boolean) : [];
+    if (!tokens.length) continue;
+
+    await sendExpoPush(tokens, {
+      title,
+      body,
+      data: {
+        type: "DRIVER_NEW_ORDER",
+        orderId: String(order._id),
+        pharmacyId: String(pharmacy._id),
+      },
+      channelId: "order-updates",
+    });
+  }
 }

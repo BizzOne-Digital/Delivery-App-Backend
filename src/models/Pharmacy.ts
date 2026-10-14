@@ -24,6 +24,8 @@ export interface IPharmacy extends Document {
   address: string;
   latitude: number;
   longitude: number;
+  /** Set when pharmacy saves GPS via portal (drivers use coords for 50 km reach). */
+  locationConfirmedAt?: Date;
   openingHours?: string;
   deliveryStartTime?: string;
   pickupInstructions?: string;
@@ -60,6 +62,7 @@ const pharmacySchema = new Schema<IPharmacy>(
     address: { type: String, required: true },
     latitude: { type: Number, required: true },
     longitude: { type: Number, required: true },
+    locationConfirmedAt: Date,
     openingHours: String,
     deliveryStartTime: String,
     pickupInstructions: String,
