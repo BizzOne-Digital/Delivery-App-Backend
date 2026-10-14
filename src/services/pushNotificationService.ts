@@ -93,7 +93,7 @@ export async function notifyPatientOrderStatusChange(
 async function notifyPharmacyStaff(
   pharmacyId: unknown,
   opts: {
-    prefKey: "dispatchAlerts" | "orderUpdates" | "patientMessages";
+    prefKey: "dispatchAlerts" | "orderUpdates" | "patientMessages" | "driverMessages";
     title: string;
     body: string;
     type: string;
@@ -125,7 +125,10 @@ async function notifyPharmacyStaff(
         title: opts.title,
         body: opts.body,
         data: opts.data,
-        channelId: opts.type === "PHARMACY_MESSAGE" ? "messages" : "order-updates",
+        channelId:
+          opts.type === "PHARMACY_MESSAGE" || opts.type === "DRIVER_PHARMACY_MESSAGE"
+            ? "messages"
+            : "order-updates",
       });
     }
   }
@@ -198,6 +201,70 @@ export async function notifyPharmacyStaffPatientMessage(
       patientUserId,
       pharmacyId: String(pharmacyId),
     },
+  });
+}
+
+/** Pharmacy push when a driver sends a chat message. */
+export async function notifyPharmacyStaffDriverMessage(
+  pharmacyId: unknown,
+  driverUserId: string,
+  driverName: string,
+  preview: string,
+) {
+  const title = "New driver message";
+  const body = `${driverName}: ${preview.slice(0, 120)}`;
+
+  await notifyPharmacyStaff(pharmacyId, {
+    prefKey: "driverMessages",
+    title,
+    body,
+    type: "DRIVER_PHARMACY_MESSAGE",
+    data: {
+      type: "DRIVER_PHARMACY_MESSAGE",
+      driverUserId,
+      pharmacyId: String(pharmacyId),
+    },
+  });
+}
+
+/** Driver push when pharmacy sends a chat reply. */
+export async function notifyDriverPharmacyMessage(
+  driverUserId: string,
+  pharmacyId: string,
+  pharmacyName: string,
+  preview: string,
+) {
+  const user = await User.findById(driverUserId);
+  if (!user?.active || user.role !== UserRole.DRIVER) return;
+
+  const prefs = user.notificationPreferences ?? {};
+  if (prefs.pharmacyMessages === false) return;
+
+  const title = `Message from ${pharmacyName}`;
+  const body = preview.slice(0, 120);
+
+  await Notification.create({
+    userId: user._id,
+    title,
+    body,
+    type: "DRIVER_PHARMACY_MESSAGE",
+    data: { pharmacyId, pharmacyName },
+  });
+
+  const tokens: string[] = Array.isArray(user.expoPushTokens)
+    ? user.expoPushTokens.filter(Boolean)
+    : [];
+  if (!tokens.length) return;
+
+  await sendExpoPush(tokens, {
+    title,
+    body,
+    data: {
+      type: "DRIVER_PHARMACY_MESSAGE",
+      pharmacyId,
+      pharmacyName,
+    },
+    channelId: "messages",
   });
 }
 

@@ -5,7 +5,12 @@ import { UserRole, DriverOnboardingStatus, OrderStatus } from "../types/enums.js
 import type { IUser } from "../models/User.js";
 import { calculateRateSnapshot } from "../utils/rateCalculator.js";
 import { haversineKm } from "../utils/haversine.js";
-import { canDriverSeeOrderPreview, isWithinClaimWindow } from "./orderVisibility.js";
+import { canDriverSeeOrderPreview, canDriverSeeReadyOrder, isWithinClaimWindow } from "./orderVisibility.js";
+import {
+  canDriverSeeScheduledOrder,
+  isDriverEarlyClaimForTomorrow,
+  isScheduledForTomorrow,
+} from "./driverScheduleService.js";
 import { writeAudit } from "./auditService.js";
 import { env } from "../config/env.js";
 
@@ -16,7 +21,11 @@ export class ClaimConflictError extends Error {
   }
 }
 
-export async function claimOrdersAtomic(driver: IUser, orderIds: string[]) {
+export async function claimOrdersAtomic(
+  driver: IUser,
+  orderIds: string[],
+  driverCoords?: { lat: number; lng: number },
+) {
   if (driver.role !== UserRole.DRIVER) throw new Error("Not a driver");
   if (driver.onboardingStatus !== DriverOnboardingStatus.APPROVED || !driver.active) {
     throw new Error("Driver not approved");
@@ -56,7 +65,13 @@ export async function claimOrdersAtomic(driver: IUser, orderIds: string[]) {
         continue;
       }
 
-      if (!canDriverSeeOrderPreview(order, driver, pharmacy)) {
+      const canSee = driverCoords
+        ? canDriverSeeReadyOrder(order, driver, pharmacy, driverCoords.lat, driverCoords.lng) ||
+          (order.status === OrderStatus.READY &&
+            isScheduledForTomorrow(order) &&
+            canDriverSeeScheduledOrder(order, pharmacy, driverCoords.lat, driverCoords.lng))
+        : canDriverSeeOrderPreview(order, driver, pharmacy);
+      if (!canSee) {
         results.push({ orderId, success: false, error: "Not eligible" });
         continue;
       }
@@ -64,7 +79,8 @@ export async function claimOrdersAtomic(driver: IUser, orderIds: string[]) {
       const claimWindow =
         order.assignedDriverId && String(order.assignedDriverId) === String(driver._id)
           ? true
-          : isWithinClaimWindow(order.deliveryDate, env.CLAIM_WINDOW_HOURS_BEFORE);
+          : isDriverEarlyClaimForTomorrow(order) ||
+            isWithinClaimWindow(order.deliveryDate, env.CLAIM_WINDOW_HOURS_BEFORE);
 
       if (!claimWindow) {
         results.push({ orderId, success: false, error: "Claim window not open" });

@@ -10,13 +10,28 @@ import { OrderStatus, PaymentMethod, UserRole } from "../types/enums.js";
 import { claimOrdersAtomic } from "../services/orderClaimService.js";
 import {
   canDriverSeeOrderPreview,
-  isWithinScheduleVisibility,
   redactOrderForDriver,
 } from "../services/orderVisibility.js";
+import {
+  buildPlannerDayLabels,
+  canDriverSeeScheduledOrder,
+  getNextSevenDayKeys,
+  isInRollingPlannerWeek,
+  isScheduledForTomorrow,
+  orderPlannerDayKey,
+  serializeScheduledOrder,
+  tomorrowDayKey,
+} from "../services/driverScheduleService.js";
+import {
+  filterReadyOrdersForDriver,
+  mapPharmacyForDriver,
+  parseDriverCoordinates,
+  pharmaciesInDriverReach,
+} from "../services/driverReachService.js";
+import { env } from "../config/env.js";
 import { writeAudit } from "../services/auditService.js";
 import { buildOrderListFilter, canAccessOrder, findOrderByIdOrReference } from "../services/orderAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { env } from "../config/env.js";
 import { pharmacyDistanceKm } from "../services/zoneService.js";
 import {
   notifyPatientOrderStatusChange,
@@ -63,75 +78,156 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
 
 router.get("/driver/ready", authenticate, requireRoles(UserRole.DRIVER), asyncHandler(async (req, res) => {
   const driver = req.auth!.user!;
-  const pharmacies = await Pharmacy.find({
-    linkedDriverIds: driver._id,
-    active: true,
-  });
+  const coords = parseDriverCoordinates(req.query.lat, req.query.lng);
+  if (!coords) {
+    return sendError(res, "lat and lng query parameters are required", 400);
+  }
+
+  const pharmacies = await pharmaciesInDriverReach(driver.companyId, coords.lat, coords.lng);
   const pharmacyIds = pharmacies.map((p) => p._id);
   const orders = await Order.find({
     pharmacyId: { $in: pharmacyIds },
     status: OrderStatus.READY,
   });
 
+  const groupedMap = filterReadyOrdersForDriver(orders, driver, pharmacies, coords.lat, coords.lng);
   const grouped: Record<string, unknown[]> = {};
-  for (const order of orders) {
-    const pharmacy = pharmacies.find((p) => String(p._id) === String(order.pharmacyId));
-    if (!pharmacy || !canDriverSeeOrderPreview(order, driver, pharmacy)) continue;
-    const owned =
-      String(order.assignedDriverId) === String(driver._id) && Boolean(order.claimedAt);
-    const key = String(order.pharmacyId);
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(redactOrderForDriver(order, driver, owned));
+  for (const [pharmacyId, list] of groupedMap.entries()) {
+    grouped[pharmacyId] = list.map((order) => {
+      const owned =
+        String(order.assignedDriverId) === String(driver._id) && Boolean(order.claimedAt);
+      return redactOrderForDriver(order, driver, owned);
+    });
   }
-  sendSuccess(res, { pharmacies, grouped });
+
+  const payload = pharmacies.map((p) => {
+    const mapped = mapPharmacyForDriver(p, coords.lat, coords.lng);
+    const readyCount = grouped[String(p._id)]?.length ?? 0;
+    return { ...mapped, readyCount };
+  });
+
+  sendSuccess(res, {
+    radiusKm: env.PHARMACY_NEARBY_RADIUS_KM,
+    pharmacies: payload,
+    grouped,
+  });
 }));
 
 router.get("/driver/tomorrow", authenticate, requireRoles(UserRole.DRIVER), asyncHandler(async (req, res) => {
   const driver = req.auth!.user!;
-  const start = new Date();
-  start.setDate(start.getDate() + 1);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setHours(23, 59, 59, 999);
+  const coords = parseDriverCoordinates(req.query.lat, req.query.lng);
+  if (!coords) return sendError(res, "lat and lng query parameters are required", 400);
 
-  const pharmacies = await Pharmacy.find({ linkedDriverIds: driver._id, active: true });
+  const pharmacies = await pharmaciesInDriverReach(driver.companyId, coords.lat, coords.lng);
+  const pharmacyIds = pharmacies.map((p) => p._id);
   const orders = await Order.find({
-    pharmacyId: { $in: pharmacies.map((p) => p._id) },
-    deliveryDate: { $gte: start, $lte: end },
+    pharmacyId: { $in: pharmacyIds },
     status: { $nin: [OrderStatus.CANCELLED, OrderStatus.COMPLETED] },
   })
-    .populate("pharmacyId", "name displayColor address latitude longitude")
-    .populate("customerId", "firstName lastName");
+    .populate("customerId", "firstName lastName")
+    .populate("pharmacyId", "name displayColor");
 
-  const visible = orders.filter((o) => {
-    const ph = pharmacies.find((p) => String(p._id) === String(o.pharmacyId));
-    return ph && canDriverSeeOrderPreview(o, driver, ph);
+  const tomorrowKey = tomorrowDayKey();
+  const grouped: Record<string, unknown[]> = {};
+  for (const order of orders) {
+    if (!isScheduledForTomorrow(order)) continue;
+    const pharmacy = pharmacies.find((p) => String(p._id) === String(order.pharmacyId));
+    if (!pharmacy || !canDriverSeeScheduledOrder(order, pharmacy, coords.lat, coords.lng)) continue;
+    const key = String(order.pharmacyId);
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(serializeScheduledOrder(order, driver));
+  }
+
+  const tomorrowLabel = buildPlannerDayLabels().find((d) => d.key === tomorrowKey)?.label ?? "Tomorrow";
+
+  const payload = pharmacies.map((p) => {
+    const mapped = mapPharmacyForDriver(p, coords.lat, coords.lng);
+    const list = grouped[String(p._id)] ?? [];
+    return { ...mapped, tomorrowCount: list.length };
   });
-  sendSuccess(res, visible);
+
+  sendSuccess(res, {
+    radiusKm: env.PHARMACY_NEARBY_RADIUS_KM,
+    tomorrowKey,
+    tomorrowLabel,
+    pharmacies: payload,
+    grouped,
+  });
 }));
 
 router.get("/driver/week", authenticate, requireRoles(UserRole.DRIVER), asyncHandler(async (req, res) => {
   const driver = req.auth!.user!;
-  const end = new Date();
-  end.setDate(end.getDate() + 7);
-  const pharmacies = await Pharmacy.find({ linkedDriverIds: driver._id, active: true });
+  const coords = parseDriverCoordinates(req.query.lat, req.query.lng);
+  if (!coords) return sendError(res, "lat and lng query parameters are required", 400);
+
+  const pharmacies = await pharmaciesInDriverReach(driver.companyId, coords.lat, coords.lng);
+  const pharmacyIds = pharmacies.map((p) => p._id);
   const orders = await Order.find({
-    pharmacyId: { $in: pharmacies.map((p) => p._id) },
-    deliveryDate: { $gte: new Date(), $lte: end },
+    pharmacyId: { $in: pharmacyIds },
     status: { $nin: [OrderStatus.CANCELLED, OrderStatus.COMPLETED] },
+  })
+    .populate("customerId", "firstName lastName")
+    .populate("pharmacyId", "name displayColor");
+
+  const dayKeys = getNextSevenDayKeys();
+  const byPharmacy: Record<string, Record<string, unknown[]>> = {};
+  for (const p of pharmacies) {
+    const id = String(p._id);
+    byPharmacy[id] = {};
+    for (const k of dayKeys) byPharmacy[id][k] = [];
+  }
+
+  for (const order of orders) {
+    if (!isInRollingPlannerWeek(order)) continue;
+    const pharmacy = pharmacies.find((p) => String(p._id) === String(order.pharmacyId));
+    if (!pharmacy || !canDriverSeeScheduledOrder(order, pharmacy, coords.lat, coords.lng)) continue;
+    const phId = String(order.pharmacyId);
+    const day = orderPlannerDayKey(order);
+    if (!byPharmacy[phId]?.[day]) continue;
+    byPharmacy[phId][day].push(serializeScheduledOrder(order, driver));
+  }
+
+  const payload = pharmacies.map((p) => {
+    const mapped = mapPharmacyForDriver(p, coords.lat, coords.lng);
+    const days = byPharmacy[String(p._id)] ?? {};
+    const weekCount = Object.values(days).reduce((n, list) => n + list.length, 0);
+    return { ...mapped, weekCount };
   });
-  const visible = orders.filter((o) => {
-    const ph = pharmacies.find((p) => String(p._id) === String(o.pharmacyId));
-    return ph && isWithinScheduleVisibility(o.deliveryDate) && canDriverSeeOrderPreview(o, driver, ph);
+
+  sendSuccess(res, {
+    radiusKm: env.PHARMACY_NEARBY_RADIUS_KM,
+    days: buildPlannerDayLabels(),
+    pharmacies: payload,
+    byPharmacy,
   });
-  sendSuccess(res, visible);
+}));
+
+/** Active runs for this driver — ON_THE_WAY only (Deliveries tab). */
+router.get("/driver/deliveries", authenticate, requireRoles(UserRole.DRIVER), asyncHandler(async (req, res) => {
+  const driverId = req.auth!.id;
+  const orders = await Order.find({
+    assignedDriverId: driverId,
+    status: OrderStatus.ON_THE_WAY,
+  })
+    .sort({ updatedAt: -1 })
+    .populate("pharmacyId", "name displayColor code")
+    .populate("customerId", "firstName lastName phone");
+  sendSuccess(res, orders.map((o) => serializeOrder(o)));
 }));
 
 router.post("/claim", authenticate, requireRoles(UserRole.DRIVER), asyncHandler(async (req, res) => {
-  const schema = z.object({ orderIds: z.array(z.string()).min(1) });
+  const schema = z.object({
+    orderIds: z.array(z.string()).min(1),
+    lat: z.number().min(-90).max(90).optional(),
+    lng: z.number().min(-180).max(180).optional(),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "orderIds required", 400);
-  const results = await claimOrdersAtomic(req.auth!.user!, parsed.data.orderIds);
+  const driverCoords =
+    parsed.data.lat != null && parsed.data.lng != null
+      ? { lat: parsed.data.lat, lng: parsed.data.lng }
+      : undefined;
+  const results = await claimOrdersAtomic(req.auth!.user!, parsed.data.orderIds, driverCoords);
   const failed = results.filter((r) => !r.success);
   if (failed.length === results.length) {
     return sendError(res, "Could not claim orders", 409, "CLAIM_CONFLICT");

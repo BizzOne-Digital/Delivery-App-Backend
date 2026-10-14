@@ -27,7 +27,7 @@ router.get("/", authenticate, async (req, res) => {
 
   const radiusKm = env.PHARMACY_NEARBY_RADIUS_KM;
 
-  if (req.auth!.role === UserRole.PATIENT) {
+  if (req.auth!.role === UserRole.PATIENT || req.auth!.role === UserRole.DRIVER) {
     if (!lat || !lng) {
       return sendSuccess(res, { radiusKm, items: [] });
     }
@@ -36,7 +36,11 @@ router.get("/", authenticate, async (req, res) => {
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       return sendError(res, "Invalid coordinates", 400);
     }
-    const items = await Pharmacy.find({ ...filter, active: true });
+    const driverFilter: Record<string, unknown> = { ...filter, active: true };
+    if (req.auth!.role === UserRole.DRIVER && req.auth!.companyId) {
+      driverFilter.companyId = req.auth!.companyId;
+    }
+    const items = await Pharmacy.find(driverFilter);
     const nearby = items
       .filter((p) => pharmacyWithinPatientRadius(p, latitude, longitude, radiusKm))
       .map((p) => mapPharmacyWithDistance(p, latitude, longitude))
