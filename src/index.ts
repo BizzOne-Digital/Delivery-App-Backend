@@ -1,6 +1,6 @@
 import http from "http";
-import mongoose from "mongoose";
 import { env } from "./config/env.js";
+import { connectPrimaryDatabase } from "./database/mongoConnect.js";
 import { createApp } from "./createHttpApp.js";
 import { initSocket } from "./socket/index.js";
 
@@ -8,8 +8,7 @@ async function main() {
   if (!env.MONGODB_URI.includes("delivery-app") && !env.MONGODB_URI.includes("127.0.0.1")) {
     console.warn("Ensure MongoDB database name is delivery-app in your URI.");
   }
-  await mongoose.connect(env.MONGODB_URI);
-  console.log("MongoDB connected");
+  await connectPrimaryDatabase();
 
   const app = createApp();
   const server = http.createServer(app);

@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { resolveSmtpSettings } from "../config/smtpConfig.js";
 
 type SendResult = { delivered: boolean };
 
@@ -10,6 +11,10 @@ function smtpConfigured(): boolean {
   return Boolean(user && pass);
 }
 
+export function resetSmtpTransporterCache(): void {
+  cachedTransporter = undefined;
+}
+
 function getTransporter(): Transporter | null {
   if (cachedTransporter !== undefined) return cachedTransporter;
   if (!smtpConfigured()) {
@@ -17,20 +22,18 @@ function getTransporter(): Transporter | null {
     return null;
   }
 
-  const port = Number(process.env.SMTP_PORT ?? 465);
-  const secure =
-    process.env.SMTP_SECURE === "true" ||
-    (process.env.SMTP_SECURE !== "false" && port === 465);
+  const smtp = resolveSmtpSettings();
 
   cachedTransporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST?.trim() || "smtpout.secureserver.net",
-    port,
-    secure,
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
     auth: {
       user: process.env.SMTP_USER!.trim(),
       pass: process.env.SMTP_PASS!.trim(),
     },
-    ...(port === 587 ? { requireTLS: true } : {}),
+    ...(smtp.requireTls ? { requireTLS: true } : {}),
+    connectionTimeout: 20_000,
   });
 
   return cachedTransporter;

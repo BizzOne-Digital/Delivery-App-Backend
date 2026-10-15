@@ -15,7 +15,9 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify-smtp": "tsx src/scripts/verify-smtp.ts"
+    "verify-smtp": "tsx src/scripts/verify-smtp.ts",
+    "db:shard-plan": "tsx src/scripts/db-shard-plan.ts",
+    "db:scale-indexes": "tsx src/scripts/db-scale-indexes.ts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

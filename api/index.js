@@ -13,19 +13,14 @@ function isHealthPath(path) {
 }
 
 async function connectMongo() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
+  if (!process.env.MONGODB_URI) {
     throw new Error("MONGODB_URI is missing. Set it in Vercel → Environment Variables.");
   }
   if (mongoose.connection.readyState === 1) return;
 
   if (!globalThis.__mongoPromise) {
-    globalThis.__mongoPromise = mongoose
-      .connect(uri, {
-        serverSelectionTimeoutMS: 10000,
-        maxPoolSize: 10,
-        minPoolSize: 1,
-      })
+    globalThis.__mongoPromise = import("../dist/database/mongoConnect.js")
+      .then((m) => m.connectPrimaryDatabase())
       .catch((err) => {
         globalThis.__mongoPromise = undefined;
         throw err;

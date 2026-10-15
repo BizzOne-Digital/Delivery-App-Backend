@@ -34,7 +34,8 @@ export function initSocket(httpServer: HttpServer) {
     if (user.role === UserRole.DRIVER) socket.join(`driver:${user.sub}`);
     socket.join(`user:${user.sub}`);
 
-    socket.on("order:subscribe", (orderId: string) => {
+    socket.on("order:subscribe", (orderId: unknown) => {
+      if (typeof orderId !== "string" || !/^[a-f\d]{24}$/i.test(orderId)) return;
       socket.join(`order:${orderId}`);
     });
   });

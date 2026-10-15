@@ -18,6 +18,13 @@ const schema = z.object({
   DRIVER_SCHEDULE_VISIBILITY_DAYS: z.coerce.number().default(7),
   GPS_STALE_THRESHOLD_MINUTES: z.coerce.number().default(5),
   PHARMACY_NEARBY_RADIUS_KM: z.coerce.number().default(50),
+  MONGODB_MAX_POOL_SIZE: z.coerce.number().default(50),
+  MONGODB_MIN_POOL_SIZE: z.coerce.number().default(0),
+  MONGODB_READ_PREFERENCE: z
+    .enum(["primary", "primaryPreferred", "secondary", "secondaryPreferred", "nearest"])
+    .optional(),
+  /** Optional extra cluster URIs (comma-separated) for future multi-cluster routing */
+  MONGODB_SHARD_URIS: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -51,4 +58,8 @@ export const env = parsed.success
       DRIVER_SCHEDULE_VISIBILITY_DAYS: 7,
       GPS_STALE_THRESHOLD_MINUTES: 5,
       PHARMACY_NEARBY_RADIUS_KM: 50,
+      MONGODB_MAX_POOL_SIZE: 50,
+      MONGODB_MIN_POOL_SIZE: 0,
+      MONGODB_READ_PREFERENCE: undefined,
+      MONGODB_SHARD_URIS: undefined,
     };

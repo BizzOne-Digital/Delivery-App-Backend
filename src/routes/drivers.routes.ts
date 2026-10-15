@@ -9,6 +9,7 @@ import { User } from "../models/User.js";
 import { Company } from "../models/Company.js";
 import { hashPassword, revokeRefreshToken } from "../services/authService.js";
 import { generateTemporaryPassword } from "../utils/generatePassword.js";
+import { passwordPolicyError } from "../utils/passwordPolicy.js";
 import { sendDriverLoginCredentialsEmail } from "../services/emailService.js";
 
 const router = Router();
@@ -105,6 +106,10 @@ router.post(
     const companyId =
       req.auth!.companyId ?? (await Company.findOne().sort({ createdAt: 1 }))?._id;
     const password = parsed.data.password ?? generateTemporaryPassword();
+    if (parsed.data.password) {
+      const policyErr = passwordPolicyError(parsed.data.password);
+      if (policyErr) return sendError(res, policyErr, 400);
+    }
     const sendEmail = parsed.data.sendCredentialsEmail !== false;
 
     const user = await User.create({

@@ -1,9 +1,9 @@
 import express from "express";
 import cors from "cors";
-import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import path from "path";
 import { env } from "./config/env.js";
+import { assertProductionSecrets, sanitizeRequestBody, securityHeaders } from "./middleware/security.js";
 import healthRoutes from "./routes/health.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import pharmacyRoutes from "./routes/pharmacies.routes.js";
@@ -18,8 +18,11 @@ import notificationsRoutes from "./routes/notifications.routes.js";
 import { sendError } from "./utils/apiResponse.js";
 
 export function createApp() {
+  assertProductionSecrets();
   const app = express();
-  app.use(helmet());
+  app.disable("x-powered-by");
+  app.set("trust proxy", 1);
+  app.use(securityHeaders);
   app.use(
     cors({
       origin:
@@ -27,6 +30,9 @@ export function createApp() {
           ? true
           : [env.CLIENT_URL, "http://localhost:8081", "http://localhost:19006"],
       credentials: true,
+      methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+      maxAge: 600,
     }),
   );
   app.use(
@@ -37,7 +43,8 @@ export function createApp() {
       legacyHeaders: false,
     }),
   );
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "512kb", strict: true }));
+  app.use(sanitizeRequestBody);
   app.use("/uploads", express.static(path.resolve("uploads")));
 
   app.get("/", (_req, res) => {

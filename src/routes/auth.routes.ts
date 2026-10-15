@@ -4,6 +4,7 @@ import { User } from "../models/User.js";
 import { PharmacyApplication } from "../models/PharmacyApplication.js";
 import { PharmacyApplicationStatus } from "../types/enums.js";
 import {
+  getDummyPasswordHash,
   hashPassword,
   revokeRefreshToken,
   signAccessToken,
@@ -12,6 +13,7 @@ import {
   validateRefreshToken,
   verifyPassword,
 } from "../services/authService.js";
+import { passwordPolicyError } from "../utils/passwordPolicy.js";
 import { sendError, sendSuccess } from "../utils/apiResponse.js";
 import { authenticate } from "../middleware/auth.js";
 import { Company } from "../models/Company.js";
@@ -21,47 +23,57 @@ import {
   requestPasswordResetOtp,
   resetPasswordWithOtp,
 } from "../services/passwordResetService.js";
+import {
+  changePasswordRateLimiter,
+  loginRateLimiter,
+  otpRequestRateLimiter,
+  passwordResetRateLimiter,
+  refreshRateLimiter,
+  signupRateLimiter,
+} from "../middleware/authRateLimit.js";
 
 const router = Router();
 
 const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
+  email: z.string().email().max(254),
+  password: z.string().min(8).max(128),
 });
 
-router.post("/login", asyncHandler(async (req, res) => {
+router.post("/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "Invalid credentials payload", 400);
   const email = parsed.data.email.toLowerCase();
   const user = await User.findOne({ email }).select("+passwordHash");
-  if (!user) {
-    const pending = await PharmacyApplication.findOne({
-      email,
-      status: PharmacyApplicationStatus.PENDING,
-    });
-    if (pending) {
-      return sendError(
-        res,
-        "Your pharmacy application is under review. We will email you when it is approved.",
-        403,
-        "PHARMACY_APPLICATION_PENDING",
-      );
+  const hashToCheck = user?.passwordHash ?? await getDummyPasswordHash();
+  const passwordOk = await verifyPassword(parsed.data.password, hashToCheck);
+
+  if (!user || !passwordOk) {
+    if (!user) {
+      const pending = await PharmacyApplication.findOne({
+        email,
+        status: PharmacyApplicationStatus.PENDING,
+      });
+      if (pending) {
+        return sendError(
+          res,
+          "Your pharmacy application is under review. We will email you when it is approved.",
+          403,
+          "PHARMACY_APPLICATION_PENDING",
+        );
+      }
+      const rejected = await PharmacyApplication.findOne({
+        email,
+        status: PharmacyApplicationStatus.REJECTED,
+      }).sort({ createdAt: -1 });
+      if (rejected) {
+        return sendError(
+          res,
+          rejected.rejectionReason ?? "Your pharmacy application was not approved.",
+          403,
+          "PHARMACY_APPLICATION_REJECTED",
+        );
+      }
     }
-    const rejected = await PharmacyApplication.findOne({
-      email,
-      status: PharmacyApplicationStatus.REJECTED,
-    }).sort({ createdAt: -1 });
-    if (rejected) {
-      return sendError(
-        res,
-        rejected.rejectionReason ?? "Your pharmacy application was not approved.",
-        403,
-        "PHARMACY_APPLICATION_REJECTED",
-      );
-    }
-    return sendError(res, "Invalid email or password", 401);
-  }
-  if (!(await verifyPassword(parsed.data.password, user.passwordHash))) {
     return sendError(res, "Invalid email or password", 401);
   }
   if (!user.active) return sendError(res, "Account disabled", 403);
@@ -77,7 +89,7 @@ router.post("/login", asyncHandler(async (req, res) => {
   });
 }));
 
-router.post("/refresh", asyncHandler(async (req, res) => {
+router.post("/refresh", refreshRateLimiter, asyncHandler(async (req, res) => {
   const token = req.body.refreshToken as string;
   if (!token) return sendError(res, "Refresh token required", 400);
   try {
@@ -155,7 +167,7 @@ router.delete("/me", authenticate, asyncHandler(async (req, res) => {
   sendSuccess(res, { ok: true, message: "Account deactivated. Contact support to restore." });
 }));
 
-router.post("/register-driver", asyncHandler(async (req, res) => {
+router.post("/register-driver", signupRateLimiter, asyncHandler(async (req, res) => {
   const schema = z.object({
     firstName: z.string(),
     lastName: z.string(),
@@ -168,6 +180,8 @@ router.post("/register-driver", asyncHandler(async (req, res) => {
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "Invalid registration", 400);
+  const policyErr = passwordPolicyError(parsed.data.password);
+  if (policyErr) return sendError(res, policyErr, 400);
   const exists = await User.findOne({ email: parsed.data.email.toLowerCase() });
   if (exists) return sendError(res, "Email already registered", 409);
   const passwordHash = await hashPassword(parsed.data.password);
@@ -185,7 +199,7 @@ router.post("/register-driver", asyncHandler(async (req, res) => {
   sendSuccess(res, { userId: user._id }, 201);
 }));
 
-router.post("/forgot-password", asyncHandler(async (req, res) => {
+router.post("/forgot-password", otpRequestRateLimiter, asyncHandler(async (req, res) => {
   const schema = z.object({ email: z.string().email() });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "Valid email required", 400);
@@ -199,7 +213,7 @@ router.post("/forgot-password", asyncHandler(async (req, res) => {
   });
 }));
 
-router.post("/reset-password-otp", asyncHandler(async (req, res) => {
+router.post("/reset-password-otp", passwordResetRateLimiter, asyncHandler(async (req, res) => {
   const schema = z.object({
     email: z.string().email(),
     code: z.string().min(4).max(12),
@@ -208,26 +222,34 @@ router.post("/reset-password-otp", asyncHandler(async (req, res) => {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "Invalid reset payload", 400);
 
-  const ok = await resetPasswordWithOtp(
+  const result = await resetPasswordWithOtp(
     parsed.data.email,
     parsed.data.code,
     parsed.data.newPassword,
   );
-  if (!ok) return sendError(res, "Invalid or expired code", 400);
+  if (!result.ok) {
+    return sendError(res, result.error ?? "Invalid or expired code", 400);
+  }
 
   sendSuccess(res, { ok: true, message: "Password updated. You can sign in now." });
 }));
 
-router.post("/change-password", authenticate, asyncHandler(async (req, res) => {
-  const schema = z.object({ currentPassword: z.string(), newPassword: z.string().min(8) });
+router.post("/change-password", authenticate, changePasswordRateLimiter, asyncHandler(async (req, res) => {
+  const schema = z.object({
+    currentPassword: z.string().max(128),
+    newPassword: z.string().min(8).max(128),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "Invalid payload", 400);
+  const policyErr = passwordPolicyError(parsed.data.newPassword);
+  if (policyErr) return sendError(res, policyErr, 400);
   const user = await User.findById(req.auth!.id).select("+passwordHash");
   if (!user || !(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
     return sendError(res, "Current password incorrect", 400);
   }
   user.passwordHash = await hashPassword(parsed.data.newPassword);
   await user.save();
+  await revokeRefreshToken(req.auth!.id);
   sendSuccess(res, { ok: true });
 }));
 

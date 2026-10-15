@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import { env } from "../config/env.js";
+import { connectPrimaryDatabase } from "../database/mongoConnect.js";
 import { Company } from "../models/Company.js";
 import { User } from "../models/User.js";
 import { Pharmacy } from "../models/Pharmacy.js";
@@ -20,7 +21,7 @@ import {
 const pwd = env.SEED_PASSWORD ?? "ChangeMeDev123!";
 
 async function seed() {
-  await mongoose.connect(env.MONGODB_URI);
+  await connectPrimaryDatabase();
   const passwordHash = await bcrypt.hash(pwd, 12);
 
   let company = await Company.findOne({ code: "JDA" });

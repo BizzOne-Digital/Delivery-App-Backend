@@ -1,17 +1,15 @@
 import http from "node:http";
-import mongoose from "mongoose";
 import { createApp } from "./dist/createHttpApp.js";
+import { connectPrimaryDatabase } from "./dist/database/mongoConnect.js";
 
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
+  if (!process.env.MONGODB_URI) {
     console.error("MONGODB_URI is missing — set it in Vercel Environment Variables.");
     process.exit(1);
   }
 
   try {
-    await mongoose.connect(uri);
-    console.log("MongoDB connected");
+    await connectPrimaryDatabase();
   } catch (err) {
     console.error("MongoDB connection failed:", err);
     process.exit(1);

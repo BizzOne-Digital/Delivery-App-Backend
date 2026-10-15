@@ -6,6 +6,16 @@ import { User, type IUser } from "../models/User.js";
 
 const SALT_ROUNDS = 12;
 
+let dummyPasswordHash: string | null = null;
+
+/** Constant-time path when user is missing (mitigate login timing leaks). */
+export async function getDummyPasswordHash(): Promise<string> {
+  if (!dummyPasswordHash) {
+    dummyPasswordHash = await bcrypt.hash("timing-safe-placeholder-value", SALT_ROUNDS);
+  }
+  return dummyPasswordHash;
+}
+
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }

@@ -1,13 +1,16 @@
 import crypto from "crypto";
+import { env } from "../config/env.js";
 import { PasswordResetCode } from "../models/PasswordResetCode.js";
 import { User } from "../models/User.js";
-import { hashPassword } from "./authService.js";
+import { hashPassword, revokeRefreshToken } from "./authService.js";
 import { sendPasswordResetOtpEmail } from "./emailService.js";
+import { passwordPolicyError } from "../utils/passwordPolicy.js";
 
 const OTP_TTL_MS = 15 * 60 * 1000;
+const MAX_VERIFY_ATTEMPTS = 5;
 
 function otpSecret(): string {
-  return process.env.JWT_ACCESS_SECRET ?? "dev-otp-secret";
+  return env.JWT_ACCESS_SECRET;
 }
 
 function hashOtp(code: string): string {
@@ -30,7 +33,7 @@ export async function requestPasswordResetOtp(email: string): Promise<{ delivere
 
   await PasswordResetCode.findOneAndUpdate(
     { email: normalized },
-    { codeHash: hashOtp(code), expiresAt },
+    { codeHash: hashOtp(code), expiresAt, verifyAttempts: 0 },
     { upsert: true, new: true },
   );
 
@@ -42,12 +45,12 @@ export async function requestPasswordResetOtp(email: string): Promise<{ delivere
     console.error("OTP email failed:", err);
   }
 
-  if (!delivered) {
+  if (!delivered && env.NODE_ENV !== "production") {
     console.info(`[password-reset] OTP for ${normalized}: ${code}`);
   }
 
   const devOtp =
-    process.env.NODE_ENV !== "production" && !delivered ? code : undefined;
+    env.NODE_ENV !== "production" && !delivered ? code : undefined;
 
   return { delivered, devOtp };
 }
@@ -56,23 +59,34 @@ export async function resetPasswordWithOtp(
   email: string,
   code: string,
   newPassword: string,
-): Promise<boolean> {
+): Promise<{ ok: boolean; error?: string }> {
+  const policy = passwordPolicyError(newPassword);
+  if (policy) return { ok: false, error: policy };
+
   const normalized = email.toLowerCase().trim();
   const record = await PasswordResetCode.findOne({ email: normalized });
   if (!record || record.expiresAt < new Date()) {
     if (record) await PasswordResetCode.deleteOne({ _id: record._id });
-    return false;
+    return { ok: false };
+  }
+
+  if ((record.verifyAttempts ?? 0) >= MAX_VERIFY_ATTEMPTS) {
+    await PasswordResetCode.deleteOne({ _id: record._id });
+    return { ok: false, error: "Too many invalid codes. Request a new code." };
   }
 
   if (record.codeHash !== hashOtp(code.trim())) {
-    return false;
+    record.verifyAttempts = (record.verifyAttempts ?? 0) + 1;
+    await record.save();
+    return { ok: false };
   }
 
   const user = await User.findOne({ email: normalized, active: true });
-  if (!user) return false;
+  if (!user) return { ok: false };
 
   user.passwordHash = await hashPassword(newPassword);
   await user.save();
+  await revokeRefreshToken(String(user._id));
   await PasswordResetCode.deleteOne({ _id: record._id });
-  return true;
+  return { ok: true };
 }

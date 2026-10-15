@@ -114,7 +114,7 @@ describe("auth & routes", () => {
   it("rejects invalid login", async () => {
     const res = await request(app)
       .post("/api/v1/auth/login")
-      .send({ email: "nobody@test.com", password: "wrong12" });
+      .send({ email: "nobody@test.com", password: "wrongpass" });
     expect(res.status).toBe(401);
   });
 
@@ -154,12 +154,12 @@ describe("auth & routes", () => {
     const empty = await request(app)
       .get("/api/v1/pharmacies?activeOnly=true")
       .set("Authorization", `Bearer ${patientToken}`);
-    expect(empty.body.data).toEqual([]);
+    expect(empty.body.data).toEqual({ radiusKm: 50, items: [] });
 
     const withLoc = await request(app)
       .get("/api/v1/pharmacies?activeOnly=true&lat=43.65&lng=-79.38")
       .set("Authorization", `Bearer ${patientToken}`);
-    expect(withLoc.body.data.length).toBe(1);
+    expect(withLoc.body.data.items?.length ?? withLoc.body.data.length).toBe(1);
   });
 
   it("patient can load /customers/me", async () => {

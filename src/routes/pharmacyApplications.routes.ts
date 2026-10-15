@@ -22,6 +22,7 @@ import { sendError, sendSuccess } from "../utils/apiResponse.js";
 import { generateTemporaryPassword, slugPharmacyCode } from "../utils/generatePassword.js";
 import { isValidHexColor } from "../utils/pharmacyColors.js";
 import { geocodePlace } from "../utils/geocodePlace.js";
+import { pharmacyApplyRateLimiter, publicStatusRateLimiter } from "../middleware/authRateLimit.js";
 
 const router = Router();
 
@@ -44,7 +45,7 @@ const applySchema = z
     path: ["mobilusBillingAuthorized"],
   });
 
-router.post("/", asyncHandler(async (req, res) => {
+router.post("/", pharmacyApplyRateLimiter, asyncHandler(async (req, res) => {
   const parsed = applySchema.safeParse(req.body);
   if (!parsed.success) return sendError(res, "Invalid application data", 400);
 
@@ -95,7 +96,7 @@ router.post("/", asyncHandler(async (req, res) => {
   sendSuccess(res, { applicationId: application._id, status: application.status }, 201);
 }));
 
-router.get("/status", asyncHandler(async (req, res) => {
+router.get("/status", publicStatusRateLimiter, asyncHandler(async (req, res) => {
   const email = String(req.query.email ?? "").toLowerCase().trim();
   if (!email) return sendError(res, "Email required", 400);
 
