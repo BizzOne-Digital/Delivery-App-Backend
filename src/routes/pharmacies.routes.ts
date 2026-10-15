@@ -48,7 +48,7 @@ router.get("/", authenticate, async (req, res) => {
     return sendSuccess(res, { radiusKm, items: nearby });
   }
 
-  let items = await Pharmacy.find(filter);
+  const items = await Pharmacy.find(filter);
   if (lat && lng) {
     const latitude = Number(lat);
     const longitude = Number(lng);

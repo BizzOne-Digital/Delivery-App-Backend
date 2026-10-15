@@ -8,10 +8,7 @@ import { authenticate, requireRoles } from "../middleware/auth.js";
 import { sendError, sendSuccess } from "../utils/apiResponse.js";
 import { OrderStatus, PaymentMethod, UserRole } from "../types/enums.js";
 import { claimOrdersAtomic } from "../services/orderClaimService.js";
-import {
-  canDriverSeeOrderPreview,
-  redactOrderForDriver,
-} from "../services/orderVisibility.js";
+import { redactOrderForDriver } from "../services/orderVisibility.js";
 import {
   buildPlannerDayLabels,
   canDriverSeeScheduledOrder,

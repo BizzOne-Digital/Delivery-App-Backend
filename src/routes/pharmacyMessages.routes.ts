@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Pharmacy } from "../models/Pharmacy.js";
 import { PharmacyMessage } from "../models/PharmacyMessage.js";
 import { User } from "../models/User.js";
-import { authenticate, requireRoles } from "../middleware/auth.js";
+import { authenticate } from "../middleware/auth.js";
 import {
   notifyPatientPharmacyMessage,
   notifyPharmacyStaffPatientMessage,
